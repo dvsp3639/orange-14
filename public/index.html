@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orange Restaurant - Menu</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Add Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="orange-backless.png" alt="Orange Restaurant Logo" class="logo-img">
+                    Orange Restaurant
+                </div>
+                <a href="admin.html" class="admin-link">
+                    <i class="fas fa-cog"></i>
+                    <span>Admin Panel</span>
+                </a>
+            </div>
+        </div>
+    </header>
+    
+    <div class="categories">
+        <div class="container">
+            <div class="tabs-container" id="categoryTabs">
+                <!-- Categories will be generated dynamically by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
+    <div class="container" id="menuSectionsContainer">
+        <!-- Menu sections will be generated dynamically by JavaScript -->
+    </div>
+    
+    <!-- Policy Footer -->
+    <footer class="policy-footer">
+        <div class="container">
+            <div class="footer-links">
+                <a href="T&C.html">Terms & Conditions</a>
+                <span>|</span>
+                <a href="privacy_policy.html">Privacy Policy</a>
+                <span>|</span>
+                <a href="refund_policy.html">Refund Policy</a>
+                <span>|</span>
+                <a href="shipping_policy.html">Shipping Policy</a>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Improved Footer Cart - Single Line -->
+    <div class="cart-footer" id="cartFooter">
+        <div class="container">
+            <div class="cart-footer-content">
+                <div class="cart-info">
+                    <div class="cart-items-count" id="cartItemsCount">0 items</div>
+                    <div class="cart-total" id="cartTotal">Total: ₹ 0.00</div>
+                </div>
+                <button class="summary-btn" id="summaryBtn">
+                    Summary <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden form to redirect to payment.html with cart data -->
+    <form id="redirectToPaymentForm" method="POST" action="payment.html" style="display: none;">
+        <input type="hidden" name="cartData" id="cartDataInput">
+    </form>
+
+    <!-- Firebase Configuration and Initialization -->
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDrCUl3vY2ZeQ1UrbQREnvTUImNVabYcg4",
+            authDomain: "orange-delivery-db.firebaseapp.com",
+            projectId: "orange-delivery-db",
+            storageBucket: "orange-delivery-db.firebasestorage.app",
+            messagingSenderId: "185759993186",
+            appId: "1:185759993186:web:69677777698186e05d303b"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Collections
+        const MENU_ITEMS_COLLECTION = "menuItems";
+        const ORDERS_COLLECTION = "restaurantOrders";
+        const DAILY_SALES_COLLECTION = "dailySales";
+        const LAST_ORDER_INFO_DOC = "lastOrderInfo";
+        const CATEGORIES_DOC = "categories";
+
+        // Initialize default data if needed
+        async function initializeFirebaseData() {
+            try {
+                // Check if menu items exist
+                const menuItemsSnapshot = await db.collection(MENU_ITEMS_COLLECTION).limit(1).get();
+                if (menuItemsSnapshot.empty) {
+                    console.log("Initializing Firebase with default menu items...");
+                    
+                    // We'll load default menu items from menu-data-new.js
+                    // First, we need to ensure menu-data-new.js is loaded
+                    if (typeof menuItems === 'undefined') {
+                        console.error("menuItems not found. Make sure menu-data-new.js is loaded.");
+                        return;
+                    }
+                    
+                    const batch = db.batch();
+                    
+                    menuItems.forEach(item => {
+                        const docRef = db.collection(MENU_ITEMS_COLLECTION).doc(item.id.toString());
+                        const itemData = { ...item };
+                        delete itemData.id; // Remove id from data as it's the document ID
+                        batch.set(docRef, itemData);
+                    });
+                    
+                    await batch.commit();
+                    console.log("Default menu items added to Firebase");
+                }
+
+                // Check if categories exist
+                const categoriesRef = db.collection("config").doc(CATEGORIES_DOC);
+                const categoriesDoc = await categoriesRef.get();
+                if (!categoriesDoc.exists) {
+                    if (typeof categories === 'undefined') {
+                        console.error("categories not found. Make sure menu-data-new.js is loaded.");
+                        return;
+                    }
+                    await categoriesRef.set({ categories: categories });
+                    console.log("Categories initialized in Firebase");
+                }
+
+                // Check if last order info exists
+                const lastOrderRef = db.collection("config").doc(LAST_ORDER_INFO_DOC);
+                const lastOrderDoc = await lastOrderRef.get();
+                if (!lastOrderDoc.exists) {
+                    await lastOrderRef.set({ kot: 50, bill: 50 });
+                    console.log("Last order info initialized in Firebase");
+                }
+
+            } catch (error) {
+                console.error("Error initializing Firebase data:", error);
+            }
+        }
+    </script>
+
+    <!-- Include the external menu data file -->
+    <script src="menu-data-new.js"></script>
+    
+    <script>
+        // Cart functionality
+        let cart = [];
+        
+        // DOM elements
+        const cartFooter = document.getElementById('cartFooter');
+        const cartItemsCount = document.getElementById('cartItemsCount');
+        const cartTotal = document.getElementById('cartTotal');
+        const summaryBtn = document.getElementById('summaryBtn');
+        const redirectForm = document.getElementById('redirectToPaymentForm');
+        const cartDataInput = document.getElementById('cartDataInput');
+
+        // Load data from Firebase
+        async function loadMenuData() {
+            try {
+                const snapshot = await db.collection(MENU_ITEMS_COLLECTION).get();
+                if (snapshot.empty) {
+                    console.log("No menu items found in Firebase, using default data");
+                    return typeof menuItems !== 'undefined' ? menuItems : [];
+                }
+                
+                const items = [];
+                snapshot.forEach(doc => {
+                    items.push({ 
+                        id: parseInt(doc.id),
+                        ...doc.data()
+                    });
+                });
+                return items.sort((a, b) => a.id - b.id);
+            } catch (error) {
+                console.error("Error loading menu data from Firebase:", error);
+                return typeof menuItems !== 'undefined' ? menuItems : [];
+            }
+        }
+
+        // Get all menu items (including inactive ones)
+        function getAllMenuItems() {
+            return menuItems;
+        }
+
+        // Get only active menu items (for adding to cart)
+        function getActiveMenuItems() {
+            return menuItems.filter(item => item.isActive !== false);
+        }
+
+        // Generate tabs dynamically - show all categories that have items
+        function generateCategoryTabs() {
+            const tabsContainer = document.getElementById('categoryTabs');
+            if (!tabsContainer) return;
+            
+            tabsContainer.innerHTML = '';
+            
+            // Sort categories by displayOrder
+            const sortedCategories = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
+            
+            sortedCategories.forEach(category => {
+                // Get all items for this category (including inactive)
+                let categoryItems;
+                
+                if (category.id === "recommended") {
+                    categoryItems = getAllMenuItems().filter(item => item.recommended === true);
+                } else {
+                    categoryItems = getAllMenuItems().filter(item => item.category === category.id);
+                }
+                
+                // Only show tab if there are any items (active or inactive)
+                if (categoryItems.length > 0) {
+                    const tab = document.createElement('button');
+                    tab.className = 'tab';
+                    tab.dataset.category = category.id;
+                    tab.innerHTML = `
+                        <i class="${category.icon}"></i>${category.name}
+                    `;
+                    tabsContainer.appendChild(tab);
+                }
+            });
+            
+            // Set first visible tab as active
+            const firstTab = tabsContainer.querySelector('.tab');
+            if (firstTab) {
+                firstTab.classList.add('active');
+            }
+            
+            // Reinitialize tab functionality
+            setupTabs();
+        }
+
+        // Generate menu sections dynamically - show all items
+        function generateMenuSections() {
+            const container = document.getElementById('menuSectionsContainer');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            
+            // Sort categories by displayOrder
+            const sortedCategories = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
+            
+            sortedCategories.forEach(category => {
+                // Get all items for this category (including inactive)
+                let categoryItems;
+                
+                if (category.id === "recommended") {
+                    categoryItems = getAllMenuItems().filter(item => item.recommended === true);
+                } else {
+                    categoryItems = getAllMenuItems().filter(item => item.category === category.id);
+                }
+                
+                // Skip category if it has no items at all
+                if (categoryItems.length === 0) {
+                    return;
+                }
+                
+                // Create main section
+                const section = document.createElement('section');
+                section.className = 'menu-section';
+                section.id = `${category.id}-section`;
+                
+                // Create section title
+                const title = document.createElement('h2');
+                title.className = 'section-title';
+                title.textContent = category.name;
+                section.appendChild(title);
+                
+                // Check if category has subcategories
+                if (category.subcategories && category.subcategories.length > 0 && category.id !== "recommended") {
+                    // Create sections for each subcategory
+                    let hasAnyItems = false;
+                    
+                    category.subcategories.forEach(subcategory => {
+                        const subItems = categoryItems.filter(item => item.subcategory === subcategory.id);
+                        
+                        if (subItems.length > 0) {
+                            hasAnyItems = true;
+                            
+                            // Create subcategory title
+                            const subTitle = document.createElement('h3');
+                            subTitle.className = 'sub-section-title';
+                            subTitle.textContent = subcategory.name;
+                            section.appendChild(subTitle);
+                            
+                            // Create items container
+                            const itemsContainer = document.createElement('div');
+                            itemsContainer.className = 'menu-items';
+                            itemsContainer.id = `${category.id}-${subcategory.id}-items`;
+                            
+                            // Add items
+                            subItems.forEach(item => {
+                                const menuItemElement = createMenuItemElement(item);
+                                itemsContainer.appendChild(menuItemElement);
+                            });
+                            
+                            section.appendChild(itemsContainer);
+                        }
+                    });
+                    
+                    // Check for items without subcategory
+                    const itemsWithoutSubcategory = categoryItems.filter(item => !item.subcategory);
+                    if (itemsWithoutSubcategory.length > 0) {
+                        hasAnyItems = true;
+                        
+                        // Create items container
+                        const itemsContainer = document.createElement('div');
+                        itemsContainer.className = 'menu-items';
+                        itemsContainer.id = `${category.id}-items`;
+                        
+                        // Add items
+                        itemsWithoutSubcategory.forEach(item => {
+                            const menuItemElement = createMenuItemElement(item);
+                            itemsContainer.appendChild(menuItemElement);
+                        });
+                        
+                        section.appendChild(itemsContainer);
+                    }
+                    
+                    // Add section if it has any items
+                    if (hasAnyItems) {
+                        container.appendChild(section);
+                    }
+                } else {
+                    // Category without subcategories OR Recommended category
+                    const itemsContainer = document.createElement('div');
+                    itemsContainer.className = 'menu-items';
+                    itemsContainer.id = `${category.id}-items`;
+                    
+                    // Add items
+                    categoryItems.forEach(item => {
+                        const menuItemElement = createMenuItemElement(item);
+                        itemsContainer.appendChild(menuItemElement);
+                    });
+                    
+                    section.appendChild(itemsContainer);
+                    container.appendChild(section);
+                }
+            });
+            
+            // Add event listeners to menu items
+            setupMenuItemsEventListeners();
+        }
+
+        // Create menu item element
+        function createMenuItemElement(item) {
+            const menuItem = document.createElement('div');
+            menuItem.className = 'menu-item';
+            if (!item.isActive) {
+                menuItem.classList.add('out-of-stock');
+            }
+            menuItem.dataset.id = item.id;
+            
+            const recommendedBadge = item.recommended ? 
+                '<span class="recommended-badge">Recommended</span>' : '';
+            
+            const customizableText = item.customizable ? 
+                '<span class="customizable">Customisable</span>' : '';
+            
+            const priceClass = !item.isActive ? 'out-of-stock' : '';
+            
+            menuItem.innerHTML = `
+                <div class="item-content">
+                    <div class="item-header">
+                        <div class="item-name">${item.name}${recommendedBadge}</div>
+                        <div class="item-price ${priceClass}">₹ ${item.price.toFixed(2)}</div>
+                    </div>
+                    ${item.description ? `<p class="item-description">${item.description}</p>` : ''}
+                    <div class="item-footer">
+                        <div class="quantity-controls" style="display: none;">
+                            <button class="qty-btn minus" data-id="${item.id}">-</button>
+                            <span class="quantity-display" data-id="${item.id}">0</span>
+                            <button class="qty-btn plus" data-id="${item.id}" ${!item.isActive ? 'disabled' : ''}>+</button>
+                        </div>
+                        <button class="add-btn" data-id="${item.id}" ${!item.isActive ? 'disabled' : ''}>
+                            <i class="fas fa-plus"></i> ${!item.isActive ? 'Out of Stock' : 'Add'}
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            return menuItem;
+        }
+
+        // Update all menu item controls based on cart state
+        function updateAllMenuItemsControls() {
+            document.querySelectorAll('.menu-item').forEach(menuItem => {
+                const itemId = parseInt(menuItem.dataset.id);
+                const item = menuItems.find(item => item.id === itemId);
+                const cartItem = cart.find(item => item.id === itemId);
+                const addBtn = menuItem.querySelector('.add-btn');
+                const qtyControls = menuItem.querySelector('.quantity-controls');
+                const qtyDisplay = menuItem.querySelector('.quantity-display');
+                
+                if (!item || !item.isActive) {
+                    if (addBtn) {
+                        addBtn.disabled = true;
+                        addBtn.innerHTML = '<i class="fas fa-ban"></i> Out of Stock';
+                    }
+                    return;
+                }
+                
+                if (cartItem && cartItem.quantity > 0) {
+                    // Item is in cart, show quantity controls
+                    if (addBtn) addBtn.style.display = 'none';
+                    if (qtyControls) qtyControls.style.display = 'flex';
+                    if (qtyDisplay) qtyDisplay.textContent = cartItem.quantity;
+                    
+                    // Update minus button state
+                    const minusBtn = menuItem.querySelector('.qty-btn.minus');
+                    if (minusBtn) minusBtn.disabled = cartItem.quantity <= 0;
+                    
+                    // Update plus button state
+                    const plusBtn = menuItem.querySelector('.qty-btn.plus');
+                    if (plusBtn) {
+                        plusBtn.disabled = !item.isActive;
+                    }
+                } else {
+                    // Item is not in cart, show add button
+                    if (addBtn) {
+                        addBtn.style.display = 'flex';
+                        addBtn.disabled = false;
+                        addBtn.innerHTML = '<i class="fas fa-plus"></i> Add';
+                    }
+                    if (qtyControls) qtyControls.style.display = 'none';
+                }
+            });
+        }
+
+        // Add event listeners to menu items
+        function setupMenuItemsEventListeners() {
+            // Remove any existing event listeners first
+            document.body.removeEventListener('click', handleMenuClick);
+            
+            // Add new event listener
+            document.body.addEventListener('click', handleMenuClick);
+        }
+
+        // Handle menu clicks
+        function handleMenuClick(e) {
+            // Add button click
+            if (e.target.classList.contains('add-btn') || e.target.closest('.add-btn')) {
+                const addBtn = e.target.classList.contains('add-btn') ? e.target : e.target.closest('.add-btn');
+                if (addBtn.disabled) return;
+                
+                const itemId = parseInt(addBtn.dataset.id);
+                const item = menuItems.find(menuItem => menuItem.id === itemId);
+                
+                if (item && item.isActive) {
+                    addToCart(item);
+                } else {
+                    alert('This item is currently out of stock.');
+                }
+            }
+            
+            // Plus button click
+            if (e.target.classList.contains('qty-btn') && e.target.classList.contains('plus')) {
+                const plusBtn = e.target;
+                if (plusBtn.disabled) return;
+                
+                const itemId = parseInt(plusBtn.dataset.id);
+                const item = menuItems.find(menuItem => menuItem.id === itemId);
+                
+                if (item && item.isActive) {
+                    addToCart(item);
+                } else {
+                    alert('This item is currently out of stock.');
+                }
+            }
+            
+            // Minus button click
+            if (e.target.classList.contains('qty-btn') && e.target.classList.contains('minus')) {
+                const itemId = parseInt(e.target.dataset.id);
+                updateCartItemQuantity(itemId, -1);
+            }
+        }
+
+        // Add item to cart
+        function addToCart(item) {
+            if (!item.isActive) {
+                alert('This item is currently out of stock.');
+                return;
+            }
+            
+            const existingItem = cart.find(cartItem => cartItem.id === item.id);
+            
+            if (existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                cart.push({
+                    id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    quantity: 1
+                });
+            }
+            
+            updateCart();
+        }
+
+        // Update item quantity in cart
+        function updateCartItemQuantity(itemId, change) {
+            const itemIndex = cart.findIndex(cartItem => cartItem.id === itemId);
+            
+            if (itemIndex !== -1) {
+                cart[itemIndex].quantity += change;
+                
+                if (cart[itemIndex].quantity <= 0) {
+                    // Remove item from cart when quantity reaches 0
+                    cart.splice(itemIndex, 1);
+                }
+                
+                updateCart();
+            }
+        }
+
+        // Update cart display
+        function updateCart() {
+            let itemCount = 0;
+            let subtotal = 0;
+            
+            cart.forEach(item => {
+                itemCount += item.quantity;
+                subtotal += item.price * item.quantity;
+            });
+            
+            // Update cart elements
+            if (cartItemsCount) cartItemsCount.textContent = `${itemCount} ${itemCount === 1 ? 'item' : 'items'}`;
+            if (cartTotal) cartTotal.textContent = `Total: ₹ ${subtotal.toFixed(2)}`;
+            
+            // Show or hide footer cart
+            if (cartFooter) {
+                if (itemCount > 0) {
+                    cartFooter.classList.add('active');
+                } else {
+                    cartFooter.classList.remove('active');
+                }
+            }
+            
+            // Update menu item controls
+            updateAllMenuItemsControls();
+        }
+
+        // Function to redirect to payment.html with cart data
+        function redirectToPayment() {
+            if (cart.length === 0) {
+                alert('Your cart is empty!');
+                return;
+            }
+            
+            // Calculate subtotal
+            let subtotal = 0;
+            cart.forEach(item => {
+                subtotal += item.price * item.quantity;
+            });
+            
+            // Prepare cart data with calculated totals
+            const cartData = {
+                items: cart,
+                subtotal: subtotal,
+                discount: subtotal * 0.10, // 10% discount
+                total: subtotal - (subtotal * 0.10)
+            };
+            
+            // Store cart data in sessionStorage for the payment page to access
+            sessionStorage.setItem('cartData', JSON.stringify(cartData));
+            
+            // Redirect to payment.html
+            window.location.href = 'payment.html';
+        }
+
+        // Remove item from cart
+        function removeFromCart(itemId) {
+            cart = cart.filter(item => item.id !== itemId);
+            updateCart();
+        }
+
+        // Function to center the active tab
+        function centerActiveTab() {
+            const tabsContainer = document.querySelector('.tabs-container');
+            const activeTab = document.querySelector('.tab.active');
+            
+            if (!tabsContainer || !activeTab) return;
+            
+            const containerWidth = tabsContainer.offsetWidth;
+            const tabWidth = activeTab.offsetWidth;
+            const tabLeft = activeTab.offsetLeft;
+            const scrollPosition = tabLeft - (containerWidth / 2) + (tabWidth / 2);
+            
+            tabsContainer.scrollTo({
+                left: scrollPosition,
+                behavior: 'smooth'
+            });
+        }
+
+        // Tab functionality with scroll-based activation
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.tab');
+            const sections = document.querySelectorAll('.menu-section');
+            
+            // Manual tab click - scroll to section
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // Remove active class from all tabs
+                    tabs.forEach(t => t.classList.remove('active'));
+                    
+                    // Add active class to clicked tab
+                    tab.classList.add('active');
+                    
+                    // Center the active tab
+                    centerActiveTab();
+                    
+                    // Scroll to corresponding section
+                    const category = tab.dataset.category;
+                    const section = document.getElementById(`${category}-section`);
+                    if (section) {
+                        const headerHeight = document.querySelector('header').offsetHeight;
+                        const categoriesHeight = document.querySelector('.categories').offsetHeight;
+                        const offset = headerHeight + categoriesHeight + 20;
+                        
+                        const sectionTop = section.offsetTop - offset;
+                        
+                        window.scrollTo({
+                            top: sectionTop,
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+            });
+            
+            // Auto-activate tabs based on scroll position
+            function activateTabOnScroll() {
+                const headerHeight = document.querySelector('header').offsetHeight;
+                const categoriesHeight = document.querySelector('.categories').offsetHeight;
+                const offset = headerHeight + categoriesHeight + 100;
+                
+                let currentSection = '';
+                
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop - offset;
+                    const sectionHeight = section.offsetHeight;
+                    
+                    if (window.scrollY >= sectionTop && window.scrollY < sectionTop + sectionHeight) {
+                        currentSection = section.id.replace('-section', '');
+                    }
+                });
+                
+                if (currentSection) {
+                    tabs.forEach(tab => {
+                        tab.classList.remove('active');
+                        if (tab.dataset.category === currentSection) {
+                            tab.classList.add('active');
+                            centerActiveTab();
+                        }
+                    });
+                }
+            }
+            
+            window.addEventListener('scroll', activateTabOnScroll);
+        }
+
+        // Event listeners
+        if (summaryBtn) {
+            summaryBtn.addEventListener('click', redirectToPayment);
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Initialize Firebase data
+                await initializeFirebaseData();
+                
+                // Load menu data from Firebase
+                menuItems = await loadMenuData();
+                
+                // Set up real-time listener for menu updates
+                setupMenuItemsListener();
+                
+                // Initialize UI
+                generateCategoryTabs();
+                generateMenuSections();
+                setupTabs();
+                updateCart();
+                
+                setTimeout(() => {
+                    centerActiveTab();
+                }, 100);
+                
+            } catch (error) {
+                console.error("Error initializing application:", error);
+                // Fallback to default data if Firebase fails
+                if (typeof menuItems !== 'undefined') {
+                    menuItems = menuItems;
+                    generateCategoryTabs();
+                    generateMenuSections();
+                    setupTabs();
+                    updateCart();
+                    
+                    setTimeout(() => {
+                        centerActiveTab();
+                    }, 100);
+                }
+            }
+        });
+
+        // Real-time listener for menu updates
+        function setupMenuItemsListener() {
+            return db.collection(MENU_ITEMS_COLLECTION).onSnapshot((snapshot) => {
+                const updatedItems = [];
+                snapshot.forEach(doc => {
+                    updatedItems.push({
+                        id: parseInt(doc.id),
+                        ...doc.data()
+                    });
+                });
+                menuItems = updatedItems.sort((a, b) => a.id - b.id);
+                generateCategoryTabs();
+                generateMenuSections();
+                updateAllMenuItemsControls();
+            });
+        }
+
+    </script>
+</body>
+</html>

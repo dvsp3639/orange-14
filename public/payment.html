@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orange Restaurant - Payment</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Add Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="orange-backless.png" alt="Orange Restaurant Logo" class="logo-img">
+                    Orange Restaurant
+                </div>
+                <a href="admin.html" class="admin-link">
+                    <i class="fas fa-cog"></i>
+                    <span>Admin Panel</span>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Elegant Checkout Page -->
+    <div class="checkout-page active" id="checkoutPage">
+        <div class="checkout-header">
+            <button class="back-to-menu" id="backToMenu">
+                <i class="fas fa-arrow-left"></i> Back to Menu
+            </button>
+            <h2>Order Summary</h2>
+        </div>
+        
+        <div class="checkout-body">
+            <div class="cart-items-list" id="cartItemsList">
+                <!-- Cart items will be displayed here -->
+            </div>
+            
+            <div class="checkout-summary">
+                <h3>Order Total</h3>
+                <div class="summary-details">
+                    <div class="summary-row">
+                        <span>Subtotal:</span>
+                        <span id="checkoutSubtotal">₹ 0.00</span>
+                    </div>
+                    <div class="summary-row discount-row">
+                        <span>Discount (10%):</span>
+                        <span id="checkoutDiscount">- ₹ 0.00</span>
+                    </div>
+                    <div class="summary-row summary-total">
+                        <span>Total Amount:</span>
+                        <span id="checkoutTotal">₹ 0.00</span>
+                    </div>
+                </div>
+                
+                <button class="place-order-btn" id="placeOrderBtn">
+                    Place Order
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Policy Footer -->
+    <footer class="policy-footer">
+        <div class="container">
+            <div class="footer-links">
+                <a href="T&C.html">Terms & Conditions</a>
+                <span>|</span>
+                <a href="privacy_policy.html">Privacy Policy</a>
+                <span>|</span>
+                <a href="refund_policy.html">Refund Policy</a>
+                <span>|</span>
+                <a href="shipping_policy.html">Shipping Policy</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Firebase Configuration and Initialization -->
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDrCUl3vY2ZeQ1UrbQREnvTUImNVabYcg4",
+            authDomain: "orange-delivery-db.firebaseapp.com",
+            projectId: "orange-delivery-db",
+            storageBucket: "orange-delivery-db.firebasestorage.app",
+            messagingSenderId: "185759993186",
+            appId: "1:185759993186:web:69677777698186e05d303b"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Collections
+        const MENU_ITEMS_COLLECTION = "menuItems";
+        const ORDERS_COLLECTION = "restaurantOrders";
+        const DAILY_SALES_COLLECTION = "dailySales";
+        const LAST_ORDER_INFO_DOC = "lastOrderInfo";
+        const CATEGORIES_DOC = "categories";
+
+        // DOM elements
+        const cartItemsList = document.getElementById('cartItemsList');
+        const checkoutSubtotal = document.getElementById('checkoutSubtotal');
+        const checkoutDiscount = document.getElementById('checkoutDiscount');
+        const checkoutTotal = document.getElementById('checkoutTotal');
+        const placeOrderBtn = document.getElementById('placeOrderBtn');
+        const backToMenu = document.getElementById('backToMenu');
+
+        // Cart data
+        let cart = [];
+        let cartData = { items: [], subtotal: 0, discount: 0, total: 0 };
+
+        // Load cart data from sessionStorage
+        function loadCartData() {
+            const storedCartData = sessionStorage.getItem('cartData');
+            if (storedCartData) {
+                cartData = JSON.parse(storedCartData);
+                cart = cartData.items || [];
+                updateCheckoutPage();
+            } else {
+                // If no cart data, redirect back to menu
+                window.location.href = 'index.html';
+            }
+        }
+
+        // Update checkout page
+        function updateCheckoutPage() {
+            if (!cartItemsList) return;
+            
+            cartItemsList.innerHTML = '';
+            
+            if (cart.length === 0) {
+                cartItemsList.innerHTML = `
+                    <div class="empty-cart">
+                        <i class="fas fa-shopping-cart"></i>
+                        <h3>Your cart is empty</h3>
+                        <p>Add some delicious items to your cart</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let subtotal = 0;
+            
+            cart.forEach(item => {
+                const itemTotal = item.price * item.quantity;
+                subtotal += itemTotal;
+                
+                const cartItemElement = document.createElement('div');
+                cartItemElement.className = 'cart-item';
+                cartItemElement.innerHTML = `
+                    <div class="cart-item-header">
+                        <div class="cart-item-name">${item.name}</div>
+                        <div class="cart-item-price">₹ ${item.price.toFixed(2)}</div>
+                    </div>
+                    <div class="cart-item-details">
+                        <div class="cart-item-total">₹ ${itemTotal.toFixed(2)}</div>
+                        <div class="cart-item-controls">
+                            <span class="quantity">Quantity: ${item.quantity}</span>
+                        </div>
+                    </div>
+                `;
+                
+                cartItemsList.appendChild(cartItemElement);
+            });
+            
+            // Update checkout summary
+            const discount = cartData.discount || subtotal * 0.10;
+            const total = cartData.total || subtotal - discount;
+            
+            if (checkoutSubtotal) checkoutSubtotal.textContent = `₹ ${subtotal.toFixed(2)}`;
+            if (checkoutDiscount) checkoutDiscount.textContent = `- ₹ ${discount.toFixed(2)}`;
+            if (checkoutTotal) checkoutTotal.textContent = `₹ ${total.toFixed(2)}`;
+        }
+
+        // Save order to Firebase
+        async function saveOrderToStorage() {
+            if (cart.length === 0) {
+                alert('Your cart is empty!');
+                return false;
+            }
+            
+            // Calculate order totals
+            let subtotal = 0;
+            cart.forEach(item => {
+                subtotal += item.price * item.quantity;
+            });
+            const discount = subtotal * 0.10;
+            const total = subtotal - discount;
+            
+            try {
+                // Get last order info from Firebase
+                const lastOrderDoc = await db.collection("config").doc(LAST_ORDER_INFO_DOC).get();
+                let lastOrderInfo = { kot: 50, bill: 50 };
+                if (lastOrderDoc.exists) {
+                    lastOrderInfo = lastOrderDoc.data();
+                }
+                
+                const newKOT = lastOrderInfo.kot + 1;
+                const newBILL = lastOrderInfo.bill + 1;
+                
+                // Create order object
+                const order = {
+                    orderId: 'ORD' + Date.now(),
+                    orderNumber: newBILL,
+                    kotNumber: newKOT,
+                    createdAt: new Date().toLocaleString('en-IN', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }),
+                    timestamp: new Date().getTime(),
+                    date: new Date().toISOString().split('T')[0],
+                    items: [...cart],
+                    subtotal: subtotal.toFixed(2),
+                    discount: discount.toFixed(2),
+                    total: total.toFixed(2),
+                    status: 'pending',
+                    orderType: 'dinein',
+                    restaurantName: 'Orange Restaurant'
+                };
+                
+                // Save order to Firebase
+                await db.collection(ORDERS_COLLECTION).add(order);
+                
+                // Update last order info in Firebase
+                await db.collection("config").doc(LAST_ORDER_INFO_DOC).set({
+                    kot: newKOT,
+                    bill: newBILL
+                });
+                
+                // Update daily sales in Firebase
+                await updateDailySalesInFirebase(total);
+                
+                alert(`Order placed successfully!\nKOT: ${newKOT} | BILL: ${newBILL}`);
+                
+                // Clear cart data from sessionStorage
+                sessionStorage.removeItem('cartData');
+                
+                // Redirect back to menu
+                window.location.href = 'index.html';
+                return true;
+                
+            } catch (error) {
+                console.error("Error saving order to Firebase:", error);
+                alert('Error placing order. Please try again.');
+                return false;
+            }
+        }
+        
+        // Update daily sales in Firebase
+        async function updateDailySalesInFirebase(orderTotal) {
+            const today = new Date().toISOString().split('T')[0];
+            
+            try {
+                // Get today's sales document
+                const salesDocRef = db.collection(DAILY_SALES_COLLECTION).doc(today);
+                const salesDoc = await salesDocRef.get();
+                
+                if (salesDoc.exists) {
+                    const salesData = salesDoc.data();
+                    await salesDocRef.update({
+                        total: firebase.firestore.FieldValue.increment(parseFloat(orderTotal)),
+                        orderCount: firebase.firestore.FieldValue.increment(1),
+                        'dineIn.total': firebase.firestore.FieldValue.increment(parseFloat(orderTotal)),
+                        'dineIn.count': firebase.firestore.FieldValue.increment(1)
+                    });
+                } else {
+                    await salesDocRef.set({
+                        date: today,
+                        total: parseFloat(orderTotal),
+                        orderCount: 1,
+                        dineIn: { total: parseFloat(orderTotal), count: 1 },
+                        delivery: { total: 0, count: 0 },
+                        pickup: { total: 0, count: 0 }
+                    });
+                }
+            } catch (error) {
+                console.error("Error updating daily sales in Firebase:", error);
+            }
+        }
+
+        // Event listeners
+        if (backToMenu) {
+            backToMenu.addEventListener('click', () => {
+                window.location.href = 'index.html';
+            });
+        }
+
+        if (placeOrderBtn) {
+            placeOrderBtn.addEventListener('click', async () => {
+                const totalAmount = cartData.total || (cartData.subtotal - cartData.discount);
+                initiatePhonePePayment(totalAmount);
+            });
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCartData();
+        });
+    </script>
+
+    <script src="payment.js"></script>
+    <script src="https://mercury.phonepe.com/web/bundle/checkout.js"></script>
+    <script src="https://mercury-uat.phonepe.com/web/bundle/checkout.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "your-app",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "parcel index.html",
+    "build": "parcel build index.html payment.html"
+  },
+  "dependencies": {
+    "express": "^4.22.1"
+  }
+}
