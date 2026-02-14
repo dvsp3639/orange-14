@@ -4,9 +4,12 @@
   "scripts": {
     "start": "node server.js",
     "dev": "parcel index.html",
-    "build": "parcel build index.html payment.html"
+    "build": "parcel build public/index.html public/payment.html"
   },
   "dependencies": {
     "express": "^4.22.1"
+  },
+  "devDependencies": {
+    "parcel": "^2.16.4"
   }
 }
