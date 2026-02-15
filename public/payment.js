@@ -1,7 +1,7 @@
 async function initiatePhonePePayment(totalAmount) {
   try {
     console.log("Payment Started...");
-    console.log("Total Amount (INR):", totalAmount);
+    console.log("Total Amount:", totalAmount);
 
     // STEP 1: Generate Access Token
     const tokenResponse = await fetch(
@@ -21,11 +21,12 @@ async function initiatePhonePePayment(totalAmount) {
     );
 
     const tokenData = await tokenResponse.json();
-    console.log("Token Data:", tokenData);
-
     const accessToken = tokenData.access_token;
 
-    // STEP 2: Create Payment Request
+    // STEP 2: Create Order ID
+    const merchantOrderId = "ORDER_" + Date.now();
+
+    // STEP 3: Create Payment Request
     const paymentResponse = await fetch(
       "https://api-preprod.phonepe.com/apis/pg-sandbox/checkout/v2/pay",
       {
@@ -35,17 +36,15 @@ async function initiatePhonePePayment(totalAmount) {
           Authorization: `O-Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          amount: totalAmount * 100, // rupees → paise
+          amount: totalAmount * 100,
           expireAfter: 300,
-
-          merchantOrderId: "ORDER_" + Date.now(),
+          merchantOrderId: merchantOrderId,
 
           paymentFlow: {
             type: "PG_CHECKOUT",
             message: "Orange Delivery Payment",
-
             merchantUrls: {
-              redirectUrl: "https://order.orange-foods.info",
+              redirectUrl: "https://order.orange-foods.info/payment",
             },
           },
         }),
@@ -55,37 +54,60 @@ async function initiatePhonePePayment(totalAmount) {
     const paymentData = await paymentResponse.json();
     console.log("Payment Data:", paymentData);
 
-    // STEP 3: Redirect User
+    // STEP 4: Open PayPage in IFRAME
     if (paymentData.redirectUrl) {
-    
-      console.log("Opening PhonePe PayPage in IFRAME...");
-    
       window.PhonePeCheckout.transact({
         tokenUrl: paymentData.redirectUrl,
         type: "IFRAME",
-    
-        callback: function (response) {
-          console.log("Payment Finished:", response);
-    
-          if (
-            response === "CONCLUDED" ||
-            response === "COMPLETED" ||
-            response === "SUCCESS"
-          ) {
-            alert("Payment Successful 🎉");
-          } else if (response === "USER_CANCEL") {
-            window.PhonePeCheckout.closePage();
-          }
-            else {
-            alert("Payment Failed or Cancelled ❌");
-          }
-        }
-      });
-    
-    }
 
+        callback: async function (response) {
+          console.log("Payment Callback:", response);
+
+          // ✅ Always Verify Final Status
+          const statusResponse = await checkPaymentStatus(
+            merchantOrderId,
+            accessToken
+          );
+
+          console.log("Final Status:", statusResponse);
+
+          if (statusResponse.state === "COMPLETED") {
+            alert("✅ Payment Successful 🎉");
+          } else if (statusResponse.state === "FAILED") {
+            alert("❌ Payment Failed!");
+          } else {
+            alert("⚠️ Payment Pending...");
+          }
+
+          // Close iframe
+          window.PhonePeCheckout.closePage();
+        },
+      });
+    }
   } catch (error) {
     console.error("Payment Error:", error);
     alert("Something went wrong!");
+  }
+}
+
+/* ---------------- STATUS API ---------------- */
+
+async function checkPaymentStatus(merchantOrderId, accessToken) {
+  try {
+    const response = await fetch(
+      `https://api-preprod.phonepe.com/apis/pg-sandbox/checkout/v2/order/${merchantOrderId}/status`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `O-Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    return await response.json();
+  } catch (err) {
+    console.error("Status Check Error:", err);
+    return { state: "FAILED" };
   }
 }
